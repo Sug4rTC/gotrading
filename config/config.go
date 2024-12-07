@@ -1,28 +1,30 @@
 package config
 
-import (
-	"log"
-	"os"
-
-	"github.com/joho/godotenv"
-)
-
 type ConfigList struct {
 	ApiKey    string
 	ApiSecret string
+	LogFile   string
 }
 
 var Config ConfigList
 
-func LoadConfig() *ConfigList {
+func LoadConfig() (*ConfigList, error) {
 
-	err := godotenv.Load()
+	envValues, err := LoadEnValues()
 	if err != nil {
-		log.Printf(".envファイルが見つかりません。: %v", err)
+		return nil, err
 	}
 
-	return &ConfigList{
-		ApiKey:    os.Getenv("API_KEY"),
-		ApiSecret: os.Getenv("API_SECRET"),
+	iniValues, err := LoadIniValues("config.ini")
+	if err != nil {
+		return nil, err
 	}
+
+	cfg := &ConfigList{
+		ApiKey:    envValues["ApiKey"],
+		ApiSecret: envValues["ApiSecret"],
+		LogFile:   iniValues["log_file"],
+	}
+
+	return cfg, nil
 }
