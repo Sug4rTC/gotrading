@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/mitchellh/mapstructure"
 )
 
 const baseURL = "https://api.bitflyer.com/v1/"
@@ -153,31 +152,42 @@ func (t *Ticker) TruncateDateTime(duration time.Duration) time.Time {
 }
 
 func (api *APIClient) GetTicker(productCode string) (*Ticker, error) {
-	url := "ticker"
+	// product_code をクエリに含める
+	url := fmt.Sprintf("ticker?product_code=%s", productCode)
 	resp, err := api.doRequest("GET", url, map[string]string{}, nil)
-	log.Printf("url=%s resp=%s", url, string(resp))
 	if err != nil {
-		log.Printf("action=GrtTicker err=%s", err.Error())
-		return nil, err
+		log.Printf("Failed to fetch ticker data: %v", err)
+		return nil, fmt.Errorf("failed to fetch ticker data: %w", err)
 	}
-
-	//log.Printf("Raw Response: %s", string(resp))
 
 	var ticker Ticker
-	err = json.Unmarshal(resp, &ticker)
-	if err != nil {
-		log.Printf("action=GetTicker err=%s", err.Error())
-		return nil, err
+	if err := json.Unmarshal(resp, &ticker); err != nil {
+		log.Printf("Failed to decode ticker response: %v", err)
+		return nil, fmt.Errorf("failed to decode ticker response: %w", err)
 	}
 
-	//log.Printf("Decoded Balance: %+v", balance)
+	// レスポンスに ProductCode が含まれない場合、手動で設定
+	if ticker.ProductCode == "" {
+		ticker.ProductCode = productCode
+	}
+
 	return &ticker, nil
+}
+
+func InitializeData(apiClient *APIClient, productCode string) (*Ticker, error) {
+	ticker, err := apiClient.GetTicker(productCode)
+	if err != nil {
+		log.Printf("Failed to fetch initial data: %v", err)
+		return nil, fmt.Errorf("failed to fetch initial ticker data: %w", err)
+	}
+	log.Printf("Initial Ticker Data: %+v", ticker)
+	return ticker, nil
 }
 
 // websocketAPIを使用した処理
 
 type JsonRPC2 struct {
-	Version string      `json:"ssonrpc"`
+	Version string      `json:"jsonrpc"`
 	Method  string      `json:"method"`
 	Params  interface{} `json:"params"`
 	Result  interface{} `json:"result,omitempty"`
@@ -194,37 +204,56 @@ func (api *APIClient) GetRealTimeTicker(ctx context.Context, symbol string, ch c
 
 	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
-		log.Fatalf("WebSocket dial error: %v", err)
+		log.Printf("WebSocket dial error: %v", err)
+	} else {
+		log.Printf("WebSocket successfully connected to: %s", u.String())
 	}
-	defer c.Close()
+
+	defer func() {
+		log.Println("Closing WebSocket connection")
+		c.Close()
+	}()
 
 	channel := fmt.Sprintf("lightning_ticker_%s", symbol)
-	if err := c.WriteJSON(&JsonRPC2{Version: "2.0", Method: "subscribe", Params: &SubscribeParams{channel}}); err != nil {
+	log.Printf("Subscribing to channel: %s", channel)
+	if err := c.WriteJSON(&JsonRPC2{
+		Version: "2.0",
+		Method:  "subscribe",
+		Params:  &SubscribeParams{Channel: channel},
+	}); err != nil {
 		log.Printf("subscribe error: %v", err)
+		return
 	}
 
+	//受信ループ
 	for {
 		select {
 		case <-ctx.Done(): // 外部からの終了シグナル
 			log.Println("context canceled, exiting WebSocket loop")
 			return
 		default:
-			message := new(JsonRPC2)
-			if err := c.ReadJSON(message); err != nil {
+			var message JsonRPC2
+			if err := c.ReadJSON(&message); err != nil {
 				log.Printf("WebSocket read error: %v", err)
 				return
 			}
 
+			log.Printf("Raw Websocket message: %+v", message)
+
 			if message.Method == "channelMessage" {
 				if params, ok := message.Params.(map[string]interface{}); ok {
 					if binary, found := params["message"]; found {
-						var ticker Ticker
-						// binaryを直接構造体にデコード
-						if err := mapstructure.Decode(binary, &ticker); err != nil {
-							log.Printf("Failed to decode ticker message: %v", err)
-							continue
+						log.Printf("Raw Params[\"message\"]: %+v", binary) // ここで確認
+						jsonData, err := json.Marshal(binary)
+						if err != nil {
+							log.Printf("Failed to marshal binary: %v", err)
+							return
 						}
-						// データをチャンネルに送信
+						var ticker Ticker
+						if err := json.Unmarshal(jsonData, &ticker); err != nil {
+							log.Printf("Failed to unmarshal ticker JSON: %v", err)
+							return
+						}
 						ch <- ticker
 					} else {
 						log.Println("message field not found in params")
