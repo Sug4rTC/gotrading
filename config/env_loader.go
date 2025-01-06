@@ -16,5 +16,8 @@ func LoadEnValues() (map[string]string, error) {
 	return map[string]string{
 		"ApiKey":    os.Getenv("API_KEY"),
 		"ApiSecret": os.Getenv("API_SECRET"),
+		"DBName":    os.Getenv("DB_NAME"),
+		"DRIVER":    os.Getenv("DRIVER"),
+		"PORT":      os.Getenv("PORT"),
 	}, nil
 }

@@ -15,6 +15,8 @@ func LoadIniValues(filepath string) (map[string]string, error) {
 	}
 
 	return map[string]string{
-		"log_file": cfg.Section("gotradinf").Key("log_file").String(),
+		"log_file":       cfg.Section("gotrading").Key("log_file").String(),
+		"product_code":   cfg.Section("gotrading").Key("product_code").String(),
+		"trade_duration": cfg.Section("gotrading").Key("trade_duration").String(),
 	}, nil
 }
