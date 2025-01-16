@@ -97,3 +97,34 @@ func CreateCandleWithDuration(ticker bitflyer.Ticker, productCode string, durati
 	}
 	return false
 }
+
+func GetAllCandle(productCode string, duration time.Duration, limit int) (dfCandle *DataFrameCandle, err error) {
+	tableName := GetCandleTableName(productCode, duration)
+	cmd := fmt.Sprintf(`SELECT * FROM (
+	SELECT time, open, close, high, low, volume FROM %s ORDER BY time DESC LIMIT ?
+	) ORDER BY time ASC;`, tableName)
+	rows, err := DbConnection.Query(cmd, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query candles: %w", err)
+	}
+	defer rows.Close()
+
+	dfCandle = &DataFrameCandle{}
+	dfCandle.ProductCode = productCode
+	dfCandle.Duration = duration
+	for rows.Next() {
+		var candle Candle
+		candle.ProductCode = productCode
+		candle.Duration = duration
+		rows.Scan(&candle.Time, &candle.Open, &candle.Close, &candle.High, &candle.Low, &candle.Volume)
+		if err != nil {
+			log.Printf("failed to scan row: %v", err)
+			continue
+		}
+		dfCandle.Candles = append(dfCandle.Candles, candle)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating rows: %w", err)
+	}
+	return dfCandle, nil
+}

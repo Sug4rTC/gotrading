@@ -1,8 +1,8 @@
 package main
 
 import (
-	"gotrading/bitflyer/app/controllers"
-	"gotrading/bitflyer/app/models"
+	"gotrading/app/controllers"
+	"gotrading/app/models"
 	"gotrading/config"
 	"gotrading/utils"
 	"log"
@@ -27,5 +27,6 @@ func main() {
 	// ティッカーのリアルタイム処理開始
 	log.Println("Starting StreamIngestionData...")
 	controllers.StreamIngestionData()
+	controllers.StartWebServer()
 
 }
